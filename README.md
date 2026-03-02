@@ -8,6 +8,7 @@
 <p align="center">
   <a href="https://pypi.org/project/sam-agent/"><img src="https://img.shields.io/pypi/v/sam-agent?color=0073e6&label=PyPI" alt="PyPI"></a>
   <a href="https://pypi.org/project/sam-agent/"><img src="https://img.shields.io/pypi/pyversions/sam-agent?color=0073e6" alt="Python"></a>
+  <a href="https://pepy.tech/project/sam-agent"><img src="https://img.shields.io/pepy/dt/sam-agent?color=blue&label=Downloads" alt="Downloads"></a>
   <a href="https://github.com/SecFathy/SAM/blob/main/LICENSE"><img src="https://img.shields.io/github/license/SecFathy/SAM?color=green" alt="License"></a>
   <a href="https://github.com/SecFathy/SAM/stargazers"><img src="https://img.shields.io/github/stars/SecFathy/SAM?style=social" alt="Stars"></a>
 </p>
