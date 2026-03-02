@@ -1,0 +1,78 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sam-agent"
+version = "0.1.0"
+description = "SAM — Smart Agentic Model: CLI coding agent for open-source LLMs"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+keywords = ["ai", "agent", "coding", "cli", "llm", "vllm", "open-source"]
+authors = [
+    { name = "secfathy" },
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Software Development :: Code Generators",
+    "Typing :: Typed",
+]
+dependencies = [
+    "openai>=1.12.0",
+    "click>=8.1",
+    "rich>=13.0",
+    "pydantic>=2.0",
+    "pydantic-settings>=2.0",
+    "prompt-toolkit>=3.0",
+    "pygments>=2.17",
+    "networkx>=3.0",
+    "tiktoken>=0.5",
+    "pyyaml>=6.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/secfathy/SAM"
+Repository = "https://github.com/secfathy/SAM"
+Issues = "https://github.com/secfathy/SAM/issues"
+
+[project.scripts]
+sam = "sam.cli:main"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-asyncio>=0.21",
+    "ruff>=0.1",
+    "build>=1.0",
+    "twine>=5.0",
+]
+tree-sitter = [
+    "tree-sitter>=0.21",
+    "tree-sitter-languages>=1.10",
+]
+
+[tool.setuptools.packages.find]
+include = ["sam*"]
+exclude = ["sam/.venv*", "tests*"]
+
+[tool.setuptools.package-data]
+sam = ["prompts/*.md"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
