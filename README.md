@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="Logo.png" alt="SAM Logo" width="200">
+</p>
+
 <h1 align="center">SAM</h1>
 <h3 align="center">Smart Agentic Model</h3>
 
