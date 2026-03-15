@@ -6,7 +6,6 @@ import fnmatch
 import os
 import re
 from pathlib import Path
-from typing import Any
 
 from sam.tools.base import Tool, ToolResult
 
@@ -119,7 +118,10 @@ class GrepTool(Tool):
         result = "\n".join(matches)
         truncated = f" (showing first {max_results})" if len(matches) >= max_results else ""
         return ToolResult(
-            output=f"Found {len(matches)} matches{truncated} ({files_searched} files searched):\n{result}"
+            output=(
+                f"Found {len(matches)} matches{truncated}"
+                f" ({files_searched} files searched):\n{result}"
+            )
         )
 
     def _walk_files(self, root: Path, include: str | None) -> list[Path]:

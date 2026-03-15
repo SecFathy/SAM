@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 import tiktoken
 
 
@@ -79,7 +77,9 @@ class ConversationHistory:
         return self.messages
 
     @classmethod
-    def from_serializable(cls, messages: list[dict], context_window: int = 32768) -> ConversationHistory:
+    def from_serializable(
+        cls, messages: list[dict], context_window: int = 32768
+    ) -> ConversationHistory:
         history = cls(context_window=context_window)
         history.messages = messages
         return history

@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-
 INSTRUCTION_FILENAMES = ("SAM.md", ".sam.md")
 
 

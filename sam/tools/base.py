@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any
@@ -29,14 +28,6 @@ class ToolResult:
 
     output: str
     error: bool = False
-
-    def to_message(self, tool_call_id: str) -> dict:
-        """Convert to an OpenAI tool message."""
-        return {
-            "role": "tool",
-            "tool_call_id": tool_call_id,
-            "content": self.output if not self.error else f"ERROR: {self.output}",
-        }
 
 
 class Tool(ABC):

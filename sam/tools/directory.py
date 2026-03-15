@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
 from sam.tools.base import Tool, ToolResult
 
@@ -32,7 +31,9 @@ class DirectoryTool(Tool):
             "properties": {
                 "path": {
                     "type": "string",
-                    "description": "Directory path (relative to working directory or absolute). Default: '.'",
+                    "description": (
+                        "Directory path (relative to working directory or absolute). Default: '.'"
+                    ),
                 },
             },
         }

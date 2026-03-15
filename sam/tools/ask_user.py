@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-import asyncio
-from typing import Any, Callable, Awaitable
+from typing import Any, Awaitable, Callable
 
 from sam.tools.base import Tool, ToolResult
 from sam.ui.console import console
@@ -49,7 +48,9 @@ class AskUserQuestionTool(Tool):
             "required": ["question"],
         }
 
-    async def execute(self, question: str, options: list[str] | None = None, **kwargs: Any) -> ToolResult:
+    async def execute(
+        self, question: str, options: list[str] | None = None, **kwargs: Any
+    ) -> ToolResult:
         # Display the question
         console.print()
         console.print(f"[bold yellow]? {question}[/bold yellow]")

@@ -14,7 +14,6 @@ from __future__ import annotations
 import difflib
 import re
 from pathlib import Path
-from typing import Any
 
 from sam.tools.base import Tool, ToolResult
 from sam.ui.console import console

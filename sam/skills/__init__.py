@@ -2,6 +2,6 @@
 
 from __future__ import annotations
 
-from sam.skills.registry import SkillRegistry, Skill
+from sam.skills.registry import Skill, SkillRegistry
 
 __all__ = ["SkillRegistry", "Skill"]

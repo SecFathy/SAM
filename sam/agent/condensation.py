@@ -12,7 +12,8 @@ CONDENSATION_PROMPT = """Summarize the following conversation history concisely.
 4. Current state of the work
 5. Any pending issues or next steps
 
-Keep the summary focused and actionable. Preserve file paths, function names, and specific technical details.
+Keep the summary focused and actionable. Preserve file paths, function names, and specific technical
+details.
 
 Conversation to summarize:
 {conversation}"""
@@ -76,7 +77,10 @@ async def condense_history(
     })
     new_messages.append({
         "role": "assistant",
-        "content": "Understood. I have the context from our previous conversation. How can I help you continue?",
+        "content": (
+            "Understood. I have the context from our previous conversation. "
+            "How can I help you continue?"
+        ),
     })
     new_messages.extend(recent_messages)
 
@@ -97,7 +101,9 @@ def _format_messages(messages: list[dict]) -> str:
             lines.append(f"Assistant: {content}")
             for tc in msg["tool_calls"]:
                 func = tc.get("function", {})
-                lines.append(f"  -> Called {func.get('name', '?')}({func.get('arguments', '')[:200]})")
+                lines.append(
+                    f"  -> Called {func.get('name', '?')}({func.get('arguments', '')[:200]})"
+                )
         else:
             lines.append(f"{role.capitalize()}: {content[:1000]}")
 

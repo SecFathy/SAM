@@ -3,16 +3,22 @@
 from __future__ import annotations
 
 import asyncio
-import sys
 from pathlib import Path
 
 import click
+from prompt_toolkit.completion import Completer, Completion
 from rich.table import Table
 
-from prompt_toolkit.completion import Completer, Completion
 from sam.config import ModelPreset, Settings
 from sam.session.manager import SessionManager
-from sam.ui.console import console, print_banner, print_error, print_info, print_success, print_warning
+from sam.ui.console import (
+    console,
+    print_banner,
+    print_error,
+    print_info,
+    print_success,
+    print_warning,
+)
 
 
 async def _default_input_fn(question: str) -> str:
@@ -26,11 +32,11 @@ def _build_agent(settings: Settings, input_fn=None, history=None):
     from sam.agent.history import ConversationHistory
     from sam.agent.loop import AgentLoop
     from sam.models.provider import ModelProvider
+    from sam.tools.ask_user import AskUserQuestionTool
     from sam.tools.base import ToolRegistry
     from sam.tools.directory import DirectoryTool
     from sam.tools.file_read import FileReadTool
     from sam.tools.shell import ShellTool
-    from sam.tools.ask_user import AskUserQuestionTool
 
     tools = ToolRegistry()
     tools.register(FileReadTool(settings.working_dir))
@@ -64,7 +70,7 @@ def _build_agent(settings: Settings, input_fn=None, history=None):
         pass
 
     try:
-        from sam.tools.git import GitStatusTool, GitDiffTool
+        from sam.tools.git import GitDiffTool, GitStatusTool
         tools.register(GitStatusTool(settings.working_dir))
         tools.register(GitDiffTool(settings.working_dir))
     except ImportError:
@@ -72,7 +78,7 @@ def _build_agent(settings: Settings, input_fn=None, history=None):
 
     # Phase 3 tools: web, memory
     try:
-        from sam.tools.web_fetch import WebFetchTool, BrowserFetchTool
+        from sam.tools.web_fetch import BrowserFetchTool, WebFetchTool
         tools.register(WebFetchTool())
         tools.register(BrowserFetchTool())
     except ImportError:
@@ -85,7 +91,7 @@ def _build_agent(settings: Settings, input_fn=None, history=None):
         pass
 
     try:
-        from sam.tools.memory_tool import MemoryWriteTool, MemoryReadTool, MemoryDeleteTool
+        from sam.tools.memory_tool import MemoryDeleteTool, MemoryReadTool, MemoryWriteTool
         tools.register(MemoryWriteTool())
         tools.register(MemoryReadTool())
         tools.register(MemoryDeleteTool())
@@ -197,6 +203,7 @@ class _FileCompleter(Completer):
 def _print_help() -> None:
     """Print available slash commands."""
     from rich.table import Table as RichTable
+
     from sam.skills import SkillRegistry
 
     table = RichTable(show_header=False, box=None, padding=(0, 2))
@@ -291,7 +298,8 @@ async def _run_interactive(settings: Settings) -> None:
         w = console.width
         color = "yellow" if plan_mode else "dim"
         inner = w - 2  # minus ╰ and ╯
-        console.print(f"[{color}]\u2570{'\u2500' * inner}\u256f[/{color}]")
+        line = "\u2500" * inner
+        console.print(f"[{color}]\u2570{line}\u256f[/{color}]")
 
     while True:
         console.print()
@@ -333,7 +341,9 @@ async def _run_interactive(settings: Settings) -> None:
         if cmd == "/plan":
             agent.plan_mode = not agent.plan_mode
             if agent.plan_mode:
-                print_success("Plan mode ON — SAM will explore code and produce a plan (read-only).")
+                print_success(
+                    "Plan mode ON — SAM will explore code and produce a plan (read-only)."
+                )
             else:
                 agent._pending_plan = None
                 print_info("Plan mode OFF — full tool access restored.")
@@ -408,7 +418,10 @@ async def _run_interactive(settings: Settings) -> None:
         # --- Plan approval flow ---
         if agent.plan_mode and agent._pending_plan:
             while True:
-                console.print("[bold yellow]Approve plan?[/bold yellow] [dim](y = execute, n = discard, edit = revise)[/dim]")
+                console.print(
+                    "[bold yellow]Approve plan?[/bold yellow]"
+                    " [dim](y = execute, n = discard, edit = revise)[/dim]"
+                )
                 try:
                     choice = await asyncio.get_event_loop().run_in_executor(
                         None,
@@ -500,12 +513,22 @@ async def _run_oneshot(settings: Settings, message: str) -> None:
 @click.option("-s", "--session", "session_id", default=None, help="Session ID to resume")
 @click.option("--temperature", type=float, default=None, help="Sampling temperature")
 @click.option("--max-tokens", type=int, default=None, help="Max tokens per response")
-@click.option("--response-time", "show_response_time", is_flag=True, default=None, help="Show LLM response time")
+@click.option(
+    "--response-time", "show_response_time",
+    is_flag=True, default=None, help="Show LLM response time",
+)
 @click.option("--stream/--no-stream", default=None, help="Stream LLM responses (default: on)")
-@click.option("--permission-mode", "permission_mode", type=click.Choice(["auto", "safe", "ask"]), default=None, help="Permission mode (default: safe)")
+@click.option(
+    "--permission-mode", "permission_mode",
+    type=click.Choice(["auto", "safe", "ask"]),
+    default=None, help="Permission mode (default: safe)",
+)
 @click.option("--tui", is_flag=True, default=False, help="Launch Textual TUI (full terminal UI)")
 @click.pass_context
-def main(ctx, model, api_base, session_id, temperature, max_tokens, show_response_time, stream, permission_mode, tui):
+def main(
+    ctx, model, api_base, session_id, temperature,
+    max_tokens, show_response_time, stream, permission_mode, tui,
+):
     """SAM — Smart Agentic Model: CLI coding agent for open-source LLMs."""
     ctx.ensure_object(dict)
     ctx.obj["model"] = model

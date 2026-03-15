@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import yaml
 from pathlib import Path
 from typing import Any, Optional
 
+import yaml
 from pydantic import Field
 from pydantic_settings import BaseSettings
-
 
 SAM_HOME = Path.home() / ".sam"
 SESSIONS_DIR = SAM_HOME / "sessions"
@@ -135,7 +134,9 @@ class Settings(BaseSettings):
     temperature: float = Field(default=-1.0, description="Sampling temperature")
     max_tokens: int = Field(default=0, description="Max tokens per response")
     repo_map_tokens: int = Field(default=0, description="Token budget for repo map")
-    show_response_time: bool = Field(default=False, description="Print LLM response time after each call")
+    show_response_time: bool = Field(
+        default=False, description="Print LLM response time after each call"
+    )
     stream: bool = Field(default=True, description="Stream LLM responses token-by-token")
     hermes_tool_calling: bool = Field(
         default=False,
@@ -143,7 +144,9 @@ class Settings(BaseSettings):
     )
     permission_mode: str = Field(
         default="safe",
-        description="Permission mode: auto (no prompts), safe (confirm writes/shell), ask (confirm all)",
+        description=(
+            "Permission mode: auto (no prompts), safe (confirm writes/shell), ask (confirm all)"
+        ),
     )
 
     # Session

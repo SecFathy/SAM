@@ -9,7 +9,6 @@ from __future__ import annotations
 import asyncio
 import os
 from pathlib import Path
-from typing import Any
 
 from sam.tools.base import Tool, ToolResult
 
@@ -93,7 +92,6 @@ class CheckpointCreateTool(Tool):
                 env={**os.environ, "TERM": "dumb"},
             )
             stdout, stderr = await proc.communicate()
-            out = stdout.decode().strip()
 
             if proc.returncode != 0:
                 return ToolResult(

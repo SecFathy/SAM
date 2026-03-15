@@ -9,22 +9,23 @@ from __future__ import annotations
 import json
 import re
 import uuid
-from typing import Any
 
 from sam.models.streaming import StreamAccumulator, ToolCallAccumulator
 
-
-TOOL_PROMPT_TEMPLATE = """You have access to the following tools. To call a tool, respond with a <tool_call> block:
-
-<tool_call>
-{{"name": "tool_name", "arguments": {{"arg1": "value1"}}}}
-</tool_call>
-
-You can call multiple tools by using multiple <tool_call> blocks.
-
-Available tools:
-{tool_definitions}
-"""
+TOOL_PROMPT_TEMPLATE = (
+    "You have access to the following tools."
+    " To call a tool, respond with a <tool_call> block:\n"
+    "\n"
+    "<tool_call>\n"
+    '{{"name": "tool_name", "arguments": {{"arg1": "value1"}}}}\n'
+    "</tool_call>\n"
+    "\n"
+    "You can call multiple tools by using multiple"
+    " <tool_call> blocks.\n"
+    "\n"
+    "Available tools:\n"
+    "{tool_definitions}\n"
+)
 
 
 def format_tool_definitions(tools: list[dict]) -> str:

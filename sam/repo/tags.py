@@ -128,7 +128,9 @@ def _walk_tree(node, content: str, result: FileSymbols) -> None:
 def _get_name(node) -> str | None:
     """Get the name identifier from a definition node."""
     for child in node.children:
-        if child.type in ("identifier", "property_identifier", "type_identifier", "field_identifier"):
+        if child.type in (
+            "identifier", "property_identifier", "type_identifier", "field_identifier"
+        ):
             return child.text.decode("utf-8") if isinstance(child.text, bytes) else child.text
     return None
 
@@ -162,7 +164,10 @@ def _extract_with_regex(content: str, lang: str, rel_path: str) -> FileSymbols:
             (r"^(\s*)function\s+(\w+)\s*[(<]", "function"),
             (r"^(\s*)class\s+(\w+)", "class"),
             (r"^(\s*)interface\s+(\w+)", "interface"),
-            (r"^(\s*)(?:export\s+)?(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s+)?(?:\(|function)", "function"),
+            (
+                r"^(\s*)(?:export\s+)?(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s+)?(?:\(|function)",
+                "function",
+            ),
         ],
         "rust": [
             (r"^(\s*)(?:pub\s+)?fn\s+(\w+)", "function"),

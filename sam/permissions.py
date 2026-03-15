@@ -9,26 +9,15 @@ Three modes:
 from __future__ import annotations
 
 import asyncio
-from typing import Callable, Awaitable
+from typing import Awaitable, Callable
 
 from sam.tools.base import READONLY_TOOLS
 from sam.ui.console import console
-
 
 # Permission mode constants
 AUTO = "auto"
 SAFE = "safe"
 ASK = "ask"
-
-VALID_MODES = frozenset({AUTO, SAFE, ASK})
-
-# Tools that always require confirmation in "safe" mode
-CONFIRM_TOOLS: frozenset[str] = frozenset({
-    "write_file",
-    "edit_file",
-    "run_command",
-})
-
 
 async def check_permission(
     tool_name: str,

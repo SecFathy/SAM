@@ -11,8 +11,6 @@ automatically retries with Playwright if available.
 from __future__ import annotations
 
 import re
-from pathlib import Path
-from typing import Any
 
 from sam.tools.base import Tool, ToolResult
 
@@ -53,17 +51,19 @@ class WebFetchTool(Tool):
                 },
                 "browser": {
                     "type": "boolean",
-                    "description": "Force headless browser mode (for known SPAs). Default: false (auto-detect)",
+                    "description": (
+                    "Force headless browser mode (for known SPAs). Default: false (auto-detect)"
+                ),
                 },
             },
             "required": ["url"],
         }
 
-    async def execute(self, url: str, max_length: int = 8000, browser: bool = False, **kwargs) -> ToolResult:
+    async def execute(
+        self, url: str, max_length: int = 8000, browser: bool = False, **kwargs
+    ) -> ToolResult:
         if not url.startswith(("http://", "https://")):
             return ToolResult(output="URL must start with http:// or https://", error=True)
-
-        method = "static"
 
         # If browser mode is forced, go straight to Playwright
         if browser:
@@ -295,7 +295,9 @@ class BrowserFetchTool(Tool):
                         if (!body) return '';
                         // Remove script/style/nav elements
                         const clone = body.cloneNode(true);
-                        clone.querySelectorAll('script, style, nav, footer, header, aside, [aria-hidden="true"]')
+                        clone.querySelectorAll(
+                            'script, style, nav, footer, header, aside, [aria-hidden="true"]'
+                        )
                             .forEach(el => el.remove());
                         return clone.innerText || clone.textContent || '';
                     }

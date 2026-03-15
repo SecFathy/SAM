@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
 from pathlib import Path
-from typing import AsyncIterator
 
 from sam.agent.condensation import condense_history
 from sam.agent.history import ConversationHistory
@@ -14,7 +14,7 @@ from sam.instructions import load_project_instructions
 from sam.models.provider import ModelProvider
 from sam.models.streaming import StreamAccumulator
 from sam.permissions import check_permission
-from sam.tools.base import READONLY_TOOLS, ToolRegistry, ToolResult
+from sam.tools.base import READONLY_TOOLS, ToolRegistry
 from sam.tools.memory_tool import get_relevant_memories
 from sam.ui.console import (
     console,
@@ -203,7 +203,10 @@ class AgentLoop:
                             print_tool_result(output, True)
                         else:
                             print_tool_result(result.output, result.error)
-                            output = result.output if not result.error else f"ERROR: {result.output}"
+                            output = (
+                                result.output if not result.error
+                                else f"ERROR: {result.output}"
+                            )
 
                         if self.hermes_mode:
                             results_text.append(f"[{tc.name}] {output}")
@@ -332,7 +335,10 @@ class AgentLoop:
                             print_tool_result(output, True)
                         else:
                             print_tool_result(result.output, result.error)
-                            output = result.output if not result.error else f"ERROR: {result.output}"
+                            output = (
+                                result.output if not result.error
+                                else f"ERROR: {result.output}"
+                            )
 
                         if self.hermes_mode:
                             results_text.append(f"[{tc.name}] {output}")

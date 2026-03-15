@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable
 
 
 @dataclass
@@ -80,10 +79,12 @@ _BUILTIN_SKILLS: list[Skill] = [
             "2. If all tests pass, report success and stop.\n"
             "3. If tests fail, read the failing test files and the source files involved.\n"
             "4. Analyze the root cause of each failure.\n"
-            "5. Edit the source code to fix the failures (NOT the tests, unless the tests are wrong).\n"
+            "5. Edit the source code to fix the failures "
+            "(NOT the tests, unless the tests are wrong).\n"
             "6. Go back to step 1.\n\n"
             "Continue this loop until all tests pass or you've tried 5 fix attempts. "
-            "If you can't fix a failure after 5 attempts, report what you tried and what's still failing. "
+            "If you can't fix a failure after 5 attempts, "
+            "report what you tried and what's still failing. "
             "Create a checkpoint before making changes."
         ),
     ),
@@ -95,7 +96,8 @@ _BUILTIN_SKILLS: list[Skill] = [
             "Prepare and create a GitHub pull request:\n"
             "1. Check `git status` and `git diff` for current changes.\n"
             "2. If changes are uncommitted, stage and commit them with a good message.\n"
-            "3. Check if you're on a feature branch. If on main/master, create a descriptive branch first.\n"
+            "3. Check if you're on a feature branch."
+            " If on main/master, create a descriptive branch first.\n"
             "4. Push the branch to origin.\n"
             "5. Create a PR using `gh pr create` with:\n"
             "   - A concise title (under 70 chars)\n"
@@ -196,8 +198,3 @@ class SkillRegistry:
     def all_skills(self) -> list[Skill]:
         return list(self._skills.values())
 
-    def register(self, skill: Skill) -> None:
-        self._skills[skill.name] = skill
-
-    def names(self) -> list[str]:
-        return sorted(self._skills.keys())

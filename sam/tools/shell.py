@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import os
 from pathlib import Path
-from typing import Any
 
 from sam.tools.base import Tool, ToolResult
 
@@ -124,9 +123,13 @@ class ShellTool(Tool):
             # Truncate very long output
             max_len = 10000
             if len(stdout_str) > max_len:
-                stdout_str = stdout_str[:max_len] + f"\n... (truncated, {len(stdout_str)} chars total)"
+                stdout_str = (
+                    stdout_str[:max_len] + f"\n... (truncated, {len(stdout_str)} chars total)"
+                )
             if len(stderr_str) > max_len:
-                stderr_str = stderr_str[:max_len] + f"\n... (truncated, {len(stderr_str)} chars total)"
+                stderr_str = (
+                    stderr_str[:max_len] + f"\n... (truncated, {len(stderr_str)} chars total)"
+                )
 
             parts = []
             if stdout_str:

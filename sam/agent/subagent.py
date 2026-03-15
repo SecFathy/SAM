@@ -7,8 +7,6 @@ parent agent's context window.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from sam.agent.history import ConversationHistory
 from sam.agent.loop import AgentLoop
 from sam.config import Settings
@@ -19,7 +17,9 @@ from sam.tools.base import READONLY_TOOLS, Tool, ToolRegistry, ToolResult
 class SubAgentTool(Tool):
     """Spawn a sub-agent to research a question using read-only tools."""
 
-    def __init__(self, settings: Settings, provider: ModelProvider, parent_tools: ToolRegistry) -> None:
+    def __init__(
+        self, settings: Settings, provider: ModelProvider, parent_tools: ToolRegistry
+    ) -> None:
         self._settings = settings
         self._provider = provider
         self._parent_tools = parent_tools

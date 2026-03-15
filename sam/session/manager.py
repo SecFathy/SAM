@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import uuid
-from pathlib import Path
 
 from sam.agent.history import ConversationHistory
 from sam.config import Settings
