@@ -91,9 +91,24 @@ def _build_agent(settings: Settings, input_fn=None, history=None):
     except ImportError:
         pass
 
+    # Checkpoint tools for multi-file rollback
+    try:
+        from sam.tools.checkpoint import CheckpointCreateTool, CheckpointRestoreTool
+        tools.register(CheckpointCreateTool(settings.working_dir))
+        tools.register(CheckpointRestoreTool(settings.working_dir))
+    except ImportError:
+        pass
+
     provider = ModelProvider(settings)
     if history is None:
         history = ConversationHistory(context_window=settings.context_window)
+
+    # Sub-agent tool — needs provider and tools registry
+    try:
+        from sam.agent.subagent import SubAgentTool
+        tools.register(SubAgentTool(settings, provider, tools))
+    except ImportError:
+        pass
 
     agent = AgentLoop(
         settings=settings,
