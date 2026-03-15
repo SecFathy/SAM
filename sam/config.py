@@ -136,6 +136,15 @@ class Settings(BaseSettings):
     max_tokens: int = Field(default=0, description="Max tokens per response")
     repo_map_tokens: int = Field(default=0, description="Token budget for repo map")
     show_response_time: bool = Field(default=False, description="Print LLM response time after each call")
+    stream: bool = Field(default=True, description="Stream LLM responses token-by-token")
+    hermes_tool_calling: bool = Field(
+        default=False,
+        description="Use Hermes-style <tool_call> XML instead of native tool calling",
+    )
+    permission_mode: str = Field(
+        default="safe",
+        description="Permission mode: auto (no prompts), safe (confirm writes/shell), ask (confirm all)",
+    )
 
     # Session
     session_id: Optional[str] = Field(default=None, description="Session ID to resume")
@@ -164,6 +173,18 @@ class Settings(BaseSettings):
             self.repo_map_tokens = config.get("repo_map_tokens", 2048)
         if not self.show_response_time:
             self.show_response_time = config.get("show_response_time", False)
+        # stream defaults to True; only override if explicitly set to False in config
+        if self.stream and config.get("stream") is False:
+            self.stream = False
+        # hermes_tool_calling: check config, then auto-detect from model registry
+        if not self.hermes_tool_calling:
+            if config.get("hermes_tool_calling"):
+                self.hermes_tool_calling = True
+        # permission_mode: default "safe" unless overridden
+        if self.permission_mode == "safe":
+            cfg_mode = config.get("permission_mode")
+            if cfg_mode in ("auto", "safe", "ask"):
+                self.permission_mode = cfg_mode
 
         # Load model presets
         ModelPreset.load()

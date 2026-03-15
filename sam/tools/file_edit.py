@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from sam.tools.base import Tool, ToolResult
+from sam.ui.console import console
 
 
 class FileEditTool(Tool):
@@ -82,12 +83,20 @@ class FileEditTool(Tool):
                 msg += f"\n\nClosest match found:\n```\n{closest}\n```"
             return ToolResult(output=msg, error=True)
 
+        # Generate unified diff for preview
+        diff_text = self._generate_diff(original, result, path)
+
         try:
             file_path.write_text(result, encoding="utf-8")
         except Exception as e:
             return ToolResult(output=f"Failed to write {path}: {e}", error=True)
 
-        return ToolResult(output=f"Edited {path} (matched via {method})")
+        # Show diff in terminal
+        if diff_text:
+            from rich.syntax import Syntax
+            console.print(Syntax(diff_text, "diff", theme="monokai", word_wrap=True))
+
+        return ToolResult(output=f"Edited {path} (matched via {method})\n{diff_text}")
 
     def _find_and_replace(
         self, content: str, search: str, replace: str
@@ -265,6 +274,23 @@ class FileEditTool(Tool):
             return best_window
 
         return None
+
+    @staticmethod
+    def _generate_diff(original: str, modified: str, filename: str) -> str:
+        """Generate a compact unified diff between original and modified content."""
+        orig_lines = original.splitlines(keepends=True)
+        mod_lines = modified.splitlines(keepends=True)
+        diff = difflib.unified_diff(
+            orig_lines, mod_lines,
+            fromfile=f"a/{filename}",
+            tofile=f"b/{filename}",
+            n=3,
+        )
+        diff_text = "".join(diff)
+        # Truncate very long diffs
+        if len(diff_text) > 2000:
+            diff_text = diff_text[:2000] + "\n... (diff truncated)"
+        return diff_text
 
     @staticmethod
     def _get_indent(line: str) -> str:

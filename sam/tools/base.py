@@ -16,6 +16,9 @@ READONLY_TOOLS: frozenset[str] = frozenset({
     "git_status",
     "git_diff",
     "ask_user",
+    "web_fetch",
+    "web_search",
+    "memory_read",
 })
 
 

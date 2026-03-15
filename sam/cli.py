@@ -11,6 +11,7 @@ from rich.table import Table
 
 from prompt_toolkit.completion import Completer, Completion
 from sam.config import ModelPreset, Settings
+from sam.session.manager import SessionManager
 from sam.ui.console import console, print_banner, print_error, print_info, print_success, print_warning
 
 
@@ -20,7 +21,7 @@ async def _default_input_fn(question: str) -> str:
     return await loop.run_in_executor(None, lambda: input("❯ "))
 
 
-def _build_agent(settings: Settings, input_fn=None):
+def _build_agent(settings: Settings, input_fn=None, history=None):
     """Wire up the agent with all dependencies."""
     from sam.agent.history import ConversationHistory
     from sam.agent.loop import AgentLoop
@@ -69,14 +70,37 @@ def _build_agent(settings: Settings, input_fn=None):
     except ImportError:
         pass
 
+    # Phase 3 tools: web, memory
+    try:
+        from sam.tools.web_fetch import WebFetchTool
+        tools.register(WebFetchTool())
+    except ImportError:
+        pass
+
+    try:
+        from sam.tools.web_search import WebSearchTool
+        tools.register(WebSearchTool())
+    except ImportError:
+        pass
+
+    try:
+        from sam.tools.memory_tool import MemoryWriteTool, MemoryReadTool, MemoryDeleteTool
+        tools.register(MemoryWriteTool())
+        tools.register(MemoryReadTool())
+        tools.register(MemoryDeleteTool())
+    except ImportError:
+        pass
+
     provider = ModelProvider(settings)
-    history = ConversationHistory(context_window=settings.context_window)
+    if history is None:
+        history = ConversationHistory(context_window=settings.context_window)
 
     agent = AgentLoop(
         settings=settings,
         provider=provider,
         tools=tools,
         history=history,
+        input_fn=input_fn,
     )
 
     return agent
@@ -149,6 +173,7 @@ class _FileCompleter(Completer):
 def _print_help() -> None:
     """Print available slash commands."""
     from rich.table import Table as RichTable
+    from sam.skills import SkillRegistry
 
     table = RichTable(show_header=False, box=None, padding=(0, 2))
     table.add_column(style="bold cyan")
@@ -160,6 +185,12 @@ def _print_help() -> None:
     table.add_row("/model", "Show current model and API info")
     table.add_row("/status", "Show token usage and session stats")
     table.add_row("/exit", "Exit SAM")
+
+    # Skills
+    skills = SkillRegistry()
+    for skill in skills.all_skills():
+        table.add_row(f"/{skill.name}", skill.description)
+
     console.print(table)
     console.print()
 
@@ -177,6 +208,14 @@ async def _run_interactive(settings: Settings) -> None:
     print_info(f"Model: {settings.model_id}")
     print_info(f"Working directory: {settings.working_dir}")
     console.print("[dim]Type /help for commands. Ctrl+C to cancel, Ctrl+D to quit.[/dim]")
+
+    # Session management — resume or create
+    sess_mgr = SessionManager(settings)
+    session_id, conv_history = sess_mgr.get_or_create()
+    if settings.session_id and len(conv_history.messages) > 0:
+        print_success(f"Resumed session: {session_id} ({len(conv_history.messages)} messages)")
+    else:
+        print_info(f"Session: {session_id}")
     console.print()
 
     # Set up prompt history & session (needed before agent for ask_user input_fn)
@@ -203,7 +242,7 @@ async def _run_interactive(settings: Settings) -> None:
             lambda: session.prompt(HTML("<prompt>❯ </prompt>")),
         )
 
-    agent = _build_agent(settings, input_fn=_interactive_input_fn)
+    agent = _build_agent(settings, input_fn=_interactive_input_fn, history=conv_history)
 
     # Try to build repo map
     repo_map = ""
@@ -240,7 +279,11 @@ async def _run_interactive(settings: Settings) -> None:
             )
         except (EOFError, KeyboardInterrupt):
             _draw_bottom_border(plan_mode=agent.plan_mode)
-            console.print("\n[dim]Goodbye![/dim]")
+            try:
+                sess_mgr.save(session_id, agent.history)
+            except Exception:
+                pass
+            console.print(f"\n[dim]Goodbye! (session {session_id} saved)[/dim]")
             break
 
         _draw_bottom_border(plan_mode=agent.plan_mode)
@@ -251,7 +294,11 @@ async def _run_interactive(settings: Settings) -> None:
         # --- Slash commands ---
         cmd = user_input.lower()
         if cmd in ("exit", "quit", "/exit", "/quit"):
-            console.print("[dim]Goodbye![/dim]")
+            try:
+                sess_mgr.save(session_id, agent.history)
+            except Exception:
+                pass
+            console.print(f"[dim]Goodbye! (session {session_id} saved)[/dim]")
             break
         if cmd == "/clear":
             console.clear()
@@ -268,8 +315,9 @@ async def _run_interactive(settings: Settings) -> None:
                 print_info("Plan mode OFF — full tool access restored.")
             continue
         if cmd == "/reset":
-            agent = _build_agent(settings, input_fn=_interactive_input_fn)
-            print_success("Conversation reset.")
+            session_id, conv_history = sess_mgr.create_session()
+            agent = _build_agent(settings, input_fn=_interactive_input_fn, history=conv_history)
+            print_success(f"Conversation reset. New session: {session_id}")
             continue
         if cmd == "/model":
             print_info(f"Model: {settings.model_id}")
@@ -281,22 +329,55 @@ async def _run_interactive(settings: Settings) -> None:
             ctx = settings.context_window
             pct = int(tokens / ctx * 100) if ctx else 0
             mode = "PLAN (read-only)" if agent.plan_mode else "NORMAL"
+            print_info(f"Session:  {session_id}")
             print_info(f"Mode:     {mode}")
             print_info(f"Messages: {n_msgs}")
             print_info(f"Tokens:   ~{tokens:,} / {ctx:,} ({pct}%)")
             print_info(f"Model:    {settings.model_id}")
+            print_info(f"Perms:    {settings.permission_mode}")
             continue
         if cmd.startswith("/"):
+            # Check if it's a skill
+            from sam.skills import SkillRegistry
+            skill_name = cmd[1:]  # strip leading /
+            skills = SkillRegistry()
+            skill = skills.get(skill_name)
+            if skill:
+                console.print()
+                try:
+                    if settings.stream:
+                        await agent.run_turn_streaming(skill.prompt, repo_map=repo_map)
+                    else:
+                        await agent.run_turn(skill.prompt, repo_map=repo_map)
+                except KeyboardInterrupt:
+                    print_warning("Cancelled.")
+                except Exception as e:
+                    print_error(f"Error: {e}")
+                try:
+                    sess_mgr.save(session_id, agent.history)
+                except Exception:
+                    pass
+                console.print()
+                continue
             print_warning(f"Unknown command: {cmd}  (type /help for commands)")
             continue
 
         console.print()
         try:
-            await agent.run_turn(user_input, repo_map=repo_map)
+            if settings.stream:
+                await agent.run_turn_streaming(user_input, repo_map=repo_map)
+            else:
+                await agent.run_turn(user_input, repo_map=repo_map)
         except KeyboardInterrupt:
             print_warning("Cancelled.")
         except Exception as e:
             print_error(f"Error: {e}")
+
+        # Auto-save session after each turn
+        try:
+            sess_mgr.save(session_id, agent.history)
+        except Exception:
+            pass
 
         console.print()
 
@@ -322,7 +403,8 @@ async def _run_interactive(settings: Settings) -> None:
                     print_success("Plan approved — executing with full tool access...")
                     console.print()
                     try:
-                        await agent.run_turn(
+                        _run = agent.run_turn_streaming if settings.stream else agent.run_turn
+                        await _run(
                             f"Execute the following plan:\n\n{plan_text}",
                             repo_map=repo_map,
                         )
@@ -354,7 +436,8 @@ async def _run_interactive(settings: Settings) -> None:
                     agent._pending_plan = None
                     console.print()
                     try:
-                        await agent.run_turn(
+                        _run = agent.run_turn_streaming if settings.stream else agent.run_turn
+                        await _run(
                             f"Revise the plan based on this feedback:\n\n{feedback}",
                             repo_map=repo_map,
                         )
@@ -394,8 +477,10 @@ async def _run_oneshot(settings: Settings, message: str) -> None:
 @click.option("--temperature", type=float, default=None, help="Sampling temperature")
 @click.option("--max-tokens", type=int, default=None, help="Max tokens per response")
 @click.option("--response-time", "show_response_time", is_flag=True, default=None, help="Show LLM response time")
+@click.option("--stream/--no-stream", default=None, help="Stream LLM responses (default: on)")
+@click.option("--permission-mode", "permission_mode", type=click.Choice(["auto", "safe", "ask"]), default=None, help="Permission mode (default: safe)")
 @click.pass_context
-def main(ctx, model, api_base, session_id, temperature, max_tokens, show_response_time):
+def main(ctx, model, api_base, session_id, temperature, max_tokens, show_response_time, stream, permission_mode):
     """SAM — Smart Agentic Model: CLI coding agent for open-source LLMs."""
     ctx.ensure_object(dict)
     ctx.obj["model"] = model
@@ -404,6 +489,8 @@ def main(ctx, model, api_base, session_id, temperature, max_tokens, show_respons
     ctx.obj["temperature"] = temperature
     ctx.obj["max_tokens"] = max_tokens
     ctx.obj["show_response_time"] = show_response_time
+    ctx.obj["stream"] = stream
+    ctx.obj["permission_mode"] = permission_mode
 
     if ctx.invoked_subcommand is None:
         # No subcommand — launch interactive mode
@@ -414,6 +501,8 @@ def main(ctx, model, api_base, session_id, temperature, max_tokens, show_respons
             temperature=temperature,
             max_tokens=max_tokens,
             show_response_time=show_response_time,
+            stream=stream,
+            permission_mode=permission_mode,
         )
         asyncio.run(_run_interactive(settings))
 
@@ -430,6 +519,8 @@ def chat_cmd(ctx, message):
         temperature=ctx.obj["temperature"],
         max_tokens=ctx.obj["max_tokens"],
         show_response_time=ctx.obj["show_response_time"],
+        stream=ctx.obj["stream"],
+        permission_mode=ctx.obj["permission_mode"],
     )
     msg = " ".join(message)
     asyncio.run(_run_oneshot(settings, msg))

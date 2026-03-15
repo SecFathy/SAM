@@ -9,12 +9,40 @@ from typing import Any
 
 from sam.tools.base import Tool, ToolResult
 
-# Commands that are blocked by default for safety
-BLOCKED_PREFIXES = [
+# Commands that are always blocked — catastrophic risk
+BLOCKED_PATTERNS = [
     "rm -rf /",
+    "rm -rf /*",
     "mkfs",
     "dd if=",
-    ":(){",  # fork bomb
+    ":(){",       # fork bomb
+    ":(){ :|:",   # fork bomb variant
+    "> /dev/sda",
+    "chmod -r 000 /",
+    "chown -r",
+]
+
+# Commands that trigger a warning in output (risky but allowed)
+WARN_PATTERNS = [
+    "git push --force",
+    "git push -f ",
+    "git reset --hard",
+    "git clean -f",
+    "git checkout -- .",
+    "git restore .",
+    "drop table",
+    "drop database",
+    "truncate table",
+    "docker rm",
+    "docker rmi",
+    "kubectl delete",
+    "rm -rf",
+    "rm -r ",
+    "pip install",
+    "npm install",
+    "chmod ",
+    "chown ",
+    "sudo ",
 ]
 
 
@@ -54,14 +82,20 @@ class ShellTool(Tool):
         }
 
     async def execute(self, command: str, timeout: int = 30, **kwargs) -> ToolResult:
-        # Safety check
+        # Safety check — blocked patterns
         cmd_lower = command.strip().lower()
-        for prefix in BLOCKED_PREFIXES:
-            if cmd_lower.startswith(prefix):
+        for pattern in BLOCKED_PATTERNS:
+            if pattern in cmd_lower:
                 return ToolResult(
                     output=f"Command blocked for safety: {command}",
                     error=True,
                 )
+
+        # Check for risky patterns — flag in output
+        warnings = []
+        for pattern in WARN_PATTERNS:
+            if pattern in cmd_lower:
+                warnings.append(f"WARNING: command matches risky pattern '{pattern}'")
 
         try:
             process = await asyncio.create_subprocess_shell(
@@ -101,6 +135,10 @@ class ShellTool(Tool):
                 parts.append(f"STDERR:\n{stderr_str}")
 
             output = "\n".join(parts) if parts else "(no output)"
+
+            # Prepend safety warnings if any
+            if warnings:
+                output = "\n".join(warnings) + "\n" + output
 
             if process.returncode != 0:
                 output = f"Exit code: {process.returncode}\n{output}"

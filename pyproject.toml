@@ -54,6 +54,11 @@ dev = [
     "build>=1.0",
     "twine>=5.0",
 ]
+web = [
+    "httpx>=0.25",
+    "beautifulsoup4>=4.12",
+    "duckduckgo-search>=4.0",
+]
 tree-sitter = [
     "tree-sitter>=0.21",
     "tree-sitter-languages>=1.10",
