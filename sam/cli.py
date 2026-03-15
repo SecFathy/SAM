@@ -503,8 +503,9 @@ async def _run_oneshot(settings: Settings, message: str) -> None:
 @click.option("--response-time", "show_response_time", is_flag=True, default=None, help="Show LLM response time")
 @click.option("--stream/--no-stream", default=None, help="Stream LLM responses (default: on)")
 @click.option("--permission-mode", "permission_mode", type=click.Choice(["auto", "safe", "ask"]), default=None, help="Permission mode (default: safe)")
+@click.option("--tui", is_flag=True, default=False, help="Launch Textual TUI (full terminal UI)")
 @click.pass_context
-def main(ctx, model, api_base, session_id, temperature, max_tokens, show_response_time, stream, permission_mode):
+def main(ctx, model, api_base, session_id, temperature, max_tokens, show_response_time, stream, permission_mode, tui):
     """SAM — Smart Agentic Model: CLI coding agent for open-source LLMs."""
     ctx.ensure_object(dict)
     ctx.obj["model"] = model
@@ -517,7 +518,6 @@ def main(ctx, model, api_base, session_id, temperature, max_tokens, show_respons
     ctx.obj["permission_mode"] = permission_mode
 
     if ctx.invoked_subcommand is None:
-        # No subcommand — launch interactive mode
         settings = _make_settings(
             model=model,
             api_base=api_base,
@@ -528,7 +528,11 @@ def main(ctx, model, api_base, session_id, temperature, max_tokens, show_respons
             stream=stream,
             permission_mode=permission_mode,
         )
-        asyncio.run(_run_interactive(settings))
+        if tui:
+            from sam.ui.tui import run_tui
+            run_tui(settings)
+        else:
+            asyncio.run(_run_interactive(settings))
 
 
 @main.command(name="chat")
@@ -548,6 +552,24 @@ def chat_cmd(ctx, message):
     )
     msg = " ".join(message)
     asyncio.run(_run_oneshot(settings, msg))
+
+
+@main.command(name="tui")
+@click.pass_context
+def tui_cmd(ctx):
+    """Launch SAM with the full Textual TUI."""
+    settings = _make_settings(
+        model=ctx.obj["model"],
+        api_base=ctx.obj["api_base"],
+        session_id=ctx.obj["session_id"],
+        temperature=ctx.obj["temperature"],
+        max_tokens=ctx.obj["max_tokens"],
+        show_response_time=ctx.obj["show_response_time"],
+        stream=ctx.obj["stream"],
+        permission_mode=ctx.obj["permission_mode"],
+    )
+    from sam.ui.tui import run_tui
+    run_tui(settings)
 
 
 @main.command(name="models")
