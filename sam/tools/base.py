@@ -18,6 +18,7 @@ READONLY_TOOLS: frozenset[str] = frozenset({
     "ask_user",
     "web_fetch",
     "web_search",
+    "browser_fetch",
     "memory_read",
 })
 

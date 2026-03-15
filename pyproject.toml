@@ -59,6 +59,9 @@ web = [
     "beautifulsoup4>=4.12",
     "duckduckgo-search>=4.0",
 ]
+browser = [
+    "playwright>=1.40",
+]
 tree-sitter = [
     "tree-sitter>=0.21",
     "tree-sitter-languages>=1.10",

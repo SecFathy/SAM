@@ -72,8 +72,9 @@ def _build_agent(settings: Settings, input_fn=None, history=None):
 
     # Phase 3 tools: web, memory
     try:
-        from sam.tools.web_fetch import WebFetchTool
+        from sam.tools.web_fetch import WebFetchTool, BrowserFetchTool
         tools.register(WebFetchTool())
+        tools.register(BrowserFetchTool())
     except ImportError:
         pass
 
