@@ -1,7 +1,18 @@
 """Tests for configuration and model presets."""
 
 import pytest
+from unittest.mock import patch
+
 from sam.config import ModelPreset, Settings
+
+
+@pytest.fixture(autouse=True)
+def _isolate_config():
+    """Prevent local config.yaml from interfering with tests."""
+    with patch("sam.config._load_config_file", return_value={}):
+        ModelPreset.PRESETS = {}
+        yield
+        ModelPreset.PRESETS = {}
 
 
 def test_model_preset_resolve_known():
