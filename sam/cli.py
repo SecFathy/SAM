@@ -91,6 +91,14 @@ def _build_agent(settings: Settings, input_fn=None, history=None):
     except ImportError:
         pass
 
+    # Background task tools
+    try:
+        from sam.tools.background import BackgroundRunTool, BackgroundStatusTool
+        tools.register(BackgroundRunTool(settings.working_dir))
+        tools.register(BackgroundStatusTool())
+    except ImportError:
+        pass
+
     # Checkpoint tools for multi-file rollback
     try:
         from sam.tools.checkpoint import CheckpointCreateTool, CheckpointRestoreTool
