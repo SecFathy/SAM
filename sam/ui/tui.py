@@ -1,42 +1,53 @@
-"""Textual-based TUI for SAM — clean, minimal Claude Code-style terminal UI."""
+"""Textual TUI for SAM — modern, clean, Claude Code-inspired."""
 
 from __future__ import annotations
 
 import asyncio
+import re
+from contextlib import contextmanager
 from pathlib import Path
 
+from rich.markdown import Markdown
 from rich.text import Text
 from textual import work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Vertical, VerticalScroll
-from textual.widgets import Input, OptionList, Static
+from textual.timer import Timer
+from textual.widgets import Input, OptionList, RichLog, Static
 from textual.widgets.option_list import Option
 
-# ── Suggestion/autocomplete menu ─────────────────────────────────────
+_DIR_MARKER = "+"
+_FILE_MARKER = "-"
+
+
+# ── Suggestion menu ──────────────────────────────────────────────────
 
 
 class SuggestionMenu(OptionList):
-    """Dropdown suggestion menu for / commands and @ file paths."""
+    """Autocomplete dropdown for / commands and @ file paths."""
 
     DEFAULT_CSS = """
     SuggestionMenu {
         height: auto;
         max-height: 12;
+        width: 100%;
         dock: bottom;
         layer: overlay;
+        offset-y: -4;
         background: #252525;
-        color: #cccccc;
-        border: solid #444444;
-        padding: 0;
-        margin: 0 1 0 1;
+        color: #d4d4d4;
+        border: round #3d3d3d;
+        padding: 0 1;
+        margin: 0 2;
         display: none;
+        scrollbar-size: 1 1;
     }
     SuggestionMenu:focus {
-        border: solid #666666;
+        border: round #5a5a5a;
     }
     SuggestionMenu > .option-list--option-highlighted {
-        background: #3a3a3a;
+        background: #333333;
         color: #ffffff;
     }
     """
@@ -44,31 +55,27 @@ class SuggestionMenu(OptionList):
     def __init__(self, **kw) -> None:
         super().__init__(**kw)
         self._prefix = ""
-        self._items: list[tuple[str, str]] = []  # (value, description)
+        self._items: list[tuple[str, str]] = []
 
-    def show_commands(self, prefix: str, commands: list[tuple[str, str]]) -> None:
-        """Show slash command suggestions."""
+    def show_commands(
+        self, prefix: str, commands: list[tuple[str, str]]
+    ) -> None:
         self._prefix = prefix
         self._items = []
         self.clear_options()
-
         for name, desc in commands:
             if prefix and not name.startswith(prefix):
                 continue
             self._items.append((name, desc))
             label = Text()
-            label.append(f"/{name}", style="bold #cc7832")
-            label.append(f"  {desc}", style="dim #888888")
+            label.append(f" /{name} ", style="bold #d19a66")
+            label.append(desc, style="#7f848e")
             self.add_option(Option(label, id=name))
-
+        self.display = bool(self._items)
         if self._items:
-            self.display = True
             self.highlighted = 0
-        else:
-            self.display = False
 
     def show_files(self, prefix: str, working_dir: Path) -> None:
-        """Show @ file path suggestions."""
         self._prefix = prefix
         self._items = []
         self.clear_options()
@@ -87,65 +94,111 @@ class SuggestionMenu(OptionList):
             return
 
         try:
-            entries = sorted(search_dir.iterdir())
+            all_entries = list(search_dir.iterdir())
         except OSError:
             self.display = False
             return
 
-        count = 0
-        for entry in entries:
-            if count >= 20:
-                break
-            name = entry.name
-            if name.startswith("."):
+        # Filter hidden files and apply partial match
+        filtered = []
+        for entry in all_entries:
+            if entry.name.startswith("."):
                 continue
-            if partial and not name.lower().startswith(partial):
+            if partial and not entry.name.lower().startswith(
+                partial
+            ):
                 continue
+            filtered.append(entry)
 
+        # Sort: directories first, then files, alphabetical
+        dirs = sorted(
+            [e for e in filtered if e.is_dir()],
+            key=lambda e: e.name.lower(),
+        )
+        files = sorted(
+            [e for e in filtered if e.is_file()],
+            key=lambda e: e.name.lower(),
+        )
+
+        for entry in (dirs + files)[:20]:
             try:
                 rel = str(entry.relative_to(working_dir))
             except ValueError:
                 continue
 
-            display = rel + ("/" if entry.is_dir() else "")
-            kind = "dir" if entry.is_dir() else ""
-            self._items.append((display, kind))
+            is_dir = entry.is_dir()
+            display = rel + ("/" if is_dir else "")
+            self._items.append((display, ""))
 
             label = Text()
-            label.append(f"@{display}", style="bold #6a9fb5")
-            if kind:
-                label.append(f"  {kind}", style="dim #666666")
+            if is_dir:
+                label.append(
+                    f" {_DIR_MARKER} ", style="#61afef"
+                )
+                label.append(display, style="bold #61afef")
+            else:
+                label.append(
+                    f" {_FILE_MARKER} ", style="#5c6370"
+                )
+                label.append(display, style="#abb2bf")
             self.add_option(Option(label, id=display))
-            count += 1
 
+        self.display = bool(self._items)
         if self._items:
-            self.display = True
             self.highlighted = 0
-        else:
-            self.display = False
 
     def hide(self) -> None:
         self.display = False
         self._items = []
 
     def get_selected_value(self) -> str | None:
-        """Get the value of the currently highlighted item."""
-        if self.highlighted is not None and 0 <= self.highlighted < len(self._items):
-            return self._items[self.highlighted][0]
+        idx = self.highlighted
+        if idx is not None and 0 <= idx < len(self._items):
+            return self._items[idx][0]
         return None
 
 
-# ── Lightweight message widgets ──────────────────────────────────────
+# ── Message widgets ──────────────────────────────────────────────────
+
+
+class Separator(Static):
+    """Thin horizontal rule between conversation turns."""
+
+    DEFAULT_CSS = """
+    Separator {
+        height: 1;
+        margin: 1 2 0 2;
+        color: #2d2d2d;
+    }
+    """
+
+    def render(self) -> Text:
+        w = max(self.size.width - 4, 10)
+        return Text("\u2500" * w, style="#2d2d2d")
+
+
+class HumanLabel(Static):
+    """'You' label above user messages."""
+
+    DEFAULT_CSS = """
+    HumanLabel {
+        height: 1;
+        padding: 0 2;
+        margin: 0 0 0 0;
+    }
+    """
+
+    def render(self) -> Text:
+        return Text("You", style="bold #d19a66")
 
 
 class UserMessage(Static):
-    """User message — bold prompt prefix, plain text."""
+    """User message text."""
 
     DEFAULT_CSS = """
     UserMessage {
         height: auto;
-        margin: 1 0 0 0;
-        padding: 0 2;
+        padding: 0 2 0 2;
     }
     """
 
@@ -154,39 +207,45 @@ class UserMessage(Static):
         self._text = text
 
     def render(self) -> Text:
-        t = Text()
-        t.append("> ", style="bold #cc7832")
-        t.append(self._text, style="bold white")
-        return t
+        return Text(self._text, style="white")
 
 
-class AssistantMessage(Static):
-    """Assistant response — plain text."""
+class AssistantLabel(Static):
+    """'SAM' label above assistant responses."""
+
+    DEFAULT_CSS = """
+    AssistantLabel {
+        height: 1;
+        padding: 0 2;
+        margin: 1 0 0 0;
+    }
+    """
+
+    def render(self) -> Text:
+        return Text("SAM", style="bold #61afef")
+
+
+class AssistantMessage(RichLog):
+    """Assistant response with full markdown rendering."""
 
     DEFAULT_CSS = """
     AssistantMessage {
         height: auto;
-        margin: 0 0 0 0;
-        padding: 0 2 0 4;
-        color: #e0e0e0;
+        max-height: 100%;
+        padding: 0 2 0 2;
+        margin: 0;
+        scrollbar-size: 0 0;
+        overflow-y: auto;
     }
     """
 
-    def __init__(self, text: str, **kw) -> None:
-        super().__init__(**kw)
-        self._text = text
-
-    def render(self) -> Text:
-        return Text(self._text, style="#e0e0e0")
-
 
 class ToolCallMessage(Static):
-    """Compact tool call — single dim line with triangle marker."""
+    """Compact tool call indicator."""
 
     DEFAULT_CSS = """
     ToolCallMessage {
         height: auto;
-        margin: 0 0 0 0;
         padding: 0 2 0 4;
     }
     """
@@ -198,22 +257,21 @@ class ToolCallMessage(Static):
 
     def render(self) -> Text:
         t = Text()
-        t.append("  > ", style="dim #666666")
-        t.append(self._name, style="bold #888888")
+        t.append("\u25b8 ", style="#5c6370")
+        t.append(self._name, style="bold #5c6370")
         if self._summary:
-            t.append(f" {self._summary}", style="dim #666666")
+            t.append(f" {self._summary}", style="#4b5263")
         return t
 
 
 class ToolResultMessage(Static):
-    """Tool result — dim, indented, truncated."""
+    """Tool result — dim, compact."""
 
     DEFAULT_CSS = """
     ToolResultMessage {
         height: auto;
-        margin: 0 0 0 0;
         padding: 0 2 0 6;
-        max-height: 12;
+        max-height: 10;
         overflow-y: auto;
     }
     """
@@ -224,17 +282,17 @@ class ToolResultMessage(Static):
         self._is_error = is_error
 
     def render(self) -> Text:
-        style = "red" if self._is_error else "dim #555555"
-        return Text(self._text, style=style)
+        if self._is_error:
+            return Text(self._text, style="#e06c75")
+        return Text(self._text, style="#4b5263")
 
 
 class InfoMessage(Static):
-    """Subtle info/system message."""
+    """System/info message."""
 
     DEFAULT_CSS = """
     InfoMessage {
         height: auto;
-        margin: 0 0 0 0;
         padding: 0 2 0 4;
     }
     """
@@ -244,31 +302,45 @@ class InfoMessage(Static):
         self._text = text
 
     def render(self) -> Text:
-        return Text(self._text, style="dim italic #888888")
+        return Text(self._text, style="italic #5c6370")
 
 
-class ThinkingDots(Static):
-    """Minimal thinking indicator."""
+class ThinkingIndicator(Static):
+    """Animated thinking dots."""
 
     DEFAULT_CSS = """
-    ThinkingDots {
+    ThinkingIndicator {
         height: 1;
         padding: 0 2 0 4;
     }
     """
 
+    _dots = 0
+    _timer: Timer | None = None
+
+    def on_mount(self) -> None:
+        self._timer = self.set_interval(0.4, self._tick)
+
+    def _tick(self) -> None:
+        self._dots = (self._dots + 1) % 4
+        self.refresh()
+
+    def on_unmount(self) -> None:
+        if self._timer:
+            self._timer.stop()
+
     def render(self) -> Text:
-        return Text("...", style="dim #666666")
+        dots = "." * (self._dots + 1)
+        return Text(f"thinking{dots}", style="#5c6370")
 
 
 class WelcomeBanner(Static):
-    """Clean welcome banner — just the essentials."""
+    """Clean welcome header."""
 
     DEFAULT_CSS = """
     WelcomeBanner {
         height: auto;
-        padding: 1 2;
-        margin: 0 0 0 0;
+        padding: 1 2 0 2;
     }
     """
 
@@ -279,11 +351,20 @@ class WelcomeBanner(Static):
 
     def render(self) -> Text:
         t = Text()
-        t.append("SAM", style="bold #cc7832")
-        t.append(" v0.2.0\n", style="dim")
-        t.append(f"  model: {self._model}\n", style="dim #888888")
-        t.append(f"  cwd:   {self._cwd}\n", style="dim #888888")
-        t.append("  /help for commands, @ to mention files, Ctrl+D to quit", style="dim #666666")
+        t.append("\u2588\u2588\u2588", style="bold #61afef")
+        t.append(" SAM ", style="bold white")
+        t.append("v0.2.0", style="#5c6370")
+        t.append("\n")
+        t.append(
+            f"    {self._model}", style="#7f848e"
+        )
+        t.append("  \u2502  ", style="#3d3d3d")
+        t.append(self._cwd, style="#7f848e")
+        t.append("\n")
+        t.append(
+            "    Type / for commands, @ to mention files",
+            style="#5c6370",
+        )
         return t
 
 
@@ -291,65 +372,65 @@ class WelcomeBanner(Static):
 
 
 class SAMApp(App):
-    """SAM TUI — clean, minimal, Claude Code-inspired."""
+    """SAM TUI."""
 
     TITLE = "SAM"
 
     CSS = """
     Screen {
-        background: #1a1a1a;
+        background: #1e1e1e;
         layers: default overlay;
     }
 
     #chat-scroll {
         height: 1fr;
         scrollbar-size: 1 1;
-        scrollbar-color: #333333;
-        scrollbar-color-hover: #555555;
-        scrollbar-color-active: #777777;
+        scrollbar-color: #2d2d2d;
+        scrollbar-color-hover: #3d3d3d;
+        scrollbar-color-active: #5a5a5a;
     }
 
     #chat-container {
         height: auto;
+        padding: 0 0 1 0;
     }
 
-    #input-area {
+    #bottom-area {
         height: auto;
-        max-height: 6;
+        max-height: 4;
         dock: bottom;
-        background: #1a1a1a;
+        background: #1e1e1e;
     }
 
-    #input-bar {
+    #input-row {
         height: 3;
-        padding: 0 1;
-        background: #1a1a1a;
-        border-top: solid #333333;
+        padding: 0 2;
+        background: #1e1e1e;
+        border-top: solid #2d2d2d;
     }
 
     #prompt-input {
         height: 1;
-        background: #1a1a1a;
+        background: #1e1e1e;
         border: none;
-        color: #e0e0e0;
+        color: #d4d4d4;
     }
 
     #prompt-input:focus {
         border: none;
     }
 
-    #mode-label {
+    #status-line {
         height: 1;
         padding: 0 2;
-        background: #1a1a1a;
-        color: #555555;
+        background: #1e1e1e;
     }
     """
 
     BINDINGS = [
-        Binding("ctrl+c", "cancel", "Cancel", show=False),
-        Binding("ctrl+d", "quit", "Quit", show=False),
-        Binding("ctrl+l", "clear_chat", "Clear", show=False),
+        Binding("ctrl+c", "quit", show=False, priority=True),
+        Binding("ctrl+d", "quit", show=False, priority=True),
+        Binding("ctrl+l", "clear_chat", show=False),
         Binding("escape", "dismiss_menu", show=False),
     ]
 
@@ -366,32 +447,35 @@ class SAMApp(App):
     def compose(self) -> ComposeResult:
         with VerticalScroll(id="chat-scroll"):
             yield Vertical(id="chat-container")
-        with Vertical(id="input-area"):
-            yield SuggestionMenu(id="suggestion-menu")
-            with Vertical(id="input-bar"):
-                yield Input(placeholder="> ", id="prompt-input")
-        yield Static("", id="mode-label")
+        yield SuggestionMenu(id="suggestion-menu")
+        with Vertical(id="bottom-area"):
+            with Vertical(id="input-row"):
+                yield Input(
+                    placeholder="\u276f ",
+                    id="prompt-input",
+                )
+        yield Static("", id="status-line")
 
     async def on_mount(self) -> None:
         self._build_command_list()
         self._setup_agent()
 
     def _build_command_list(self) -> None:
-        """Build the list of slash commands for autocomplete."""
         self._slash_commands = [
             ("help", "Show available commands"),
-            ("plan", "Toggle plan mode (read-only)"),
-            ("clear", "Clear chat history"),
-            ("reset", "Start new session"),
+            ("plan", "Toggle plan mode"),
+            ("clear", "Clear chat"),
+            ("reset", "New session"),
             ("model", "Show model info"),
-            ("status", "Token usage and stats"),
-            ("exit", "Quit SAM"),
+            ("status", "Token usage"),
+            ("exit", "Quit"),
         ]
         try:
             from sam.skills import SkillRegistry
-            skills = SkillRegistry()
-            for s in skills.all_skills():
-                self._slash_commands.append((s.name, s.description))
+            for s in SkillRegistry().all_skills():
+                self._slash_commands.append(
+                    (s.name, s.description)
+                )
         except Exception:
             pass
 
@@ -406,153 +490,153 @@ class SAMApp(App):
             settings = Settings()
             self._settings = settings
 
-        async def _tui_input_fn(question: str) -> str:
-            self._add_info(f"SAM asks: {question}")
+        async def _tui_input(q: str) -> str:
+            self._add_info(f"SAM asks: {q}")
             loop = asyncio.get_event_loop()
-            return await loop.run_in_executor(None, lambda: input("> "))
+            return await loop.run_in_executor(
+                None, lambda: input("> ")
+            )
 
         self._sess_mgr = SessionManager(settings)
-        self._session_id, conv_history = self._sess_mgr.get_or_create()
+        sid, conv = self._sess_mgr.get_or_create()
+        self._session_id = sid
 
         self._agent = _build_agent(
-            settings,
-            input_fn=_tui_input_fn,
-            history=conv_history,
+            settings, input_fn=_tui_input, history=conv,
         )
 
         try:
             from sam.repo.mapper import RepoMapper
-            mapper = RepoMapper(settings.working_dir, token_budget=settings.repo_map_tokens)
+            mapper = RepoMapper(
+                settings.working_dir,
+                token_budget=settings.repo_map_tokens,
+            )
             self._repo_map = mapper.generate()
         except Exception:
             pass
 
-        # Welcome banner
         container = self.query_one("#chat-container", Vertical)
-        banner = WelcomeBanner(
+        container.mount(WelcomeBanner(
             model=settings.model_id,
             cwd=str(settings.working_dir),
-        )
-        container.mount(banner)
+        ))
 
-        self._update_mode_label()
+        self._update_status()
         self.query_one("#prompt-input", Input).focus()
 
-    # ── Input handling with autocomplete ──
+    # ── Autocomplete ──
 
     def on_input_changed(self, event: Input.Changed) -> None:
-        """Show suggestions as user types."""
         text = event.value
         menu = self.query_one("#suggestion-menu", SuggestionMenu)
 
-        # Slash command completion
         if text.startswith("/"):
-            prefix = text[1:]  # strip the /
-            menu.show_commands(prefix, self._slash_commands)
+            menu.show_commands(text[1:], self._slash_commands)
             return
 
-        # @ file completion — find last @ token
         at_idx = text.rfind("@")
-        if at_idx >= 0:
-            # @ must be at start or after whitespace
-            if at_idx == 0 or text[at_idx - 1].isspace():
-                after_at = text[at_idx + 1:]
-                # Only complete if no space after the partial path
-                if " " not in after_at and self._settings:
-                    menu.show_files(after_at, self._settings.working_dir)
-                    return
+        if at_idx >= 0 and (
+            at_idx == 0 or text[at_idx - 1].isspace()
+        ):
+            after = text[at_idx + 1:]
+            if " " not in after and self._settings:
+                menu.show_files(
+                    after, self._settings.working_dir
+                )
+                return
 
         menu.hide()
 
-    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
-        """Handle selection from the suggestion menu."""
+    def on_option_list_option_selected(
+        self, event: OptionList.OptionSelected
+    ) -> None:
         menu = self.query_one("#suggestion-menu", SuggestionMenu)
         inp = self.query_one("#prompt-input", Input)
-        text = inp.value
-
         selected = event.option.id
         if selected is None:
             menu.hide()
             return
-
+        text = inp.value
         if text.startswith("/"):
-            # Replace the whole input with the selected command
             inp.value = f"/{selected}"
             inp.cursor_position = len(inp.value)
+            menu.hide()
         else:
-            # @ file — replace from the last @ onward
             at_idx = text.rfind("@")
             if at_idx >= 0:
-                before = text[:at_idx]
-                inp.value = f"{before}@{selected}"
+                inp.value = f"{text[:at_idx]}@{selected}"
                 inp.cursor_position = len(inp.value)
-
-        menu.hide()
+                # If a directory was selected, keep menu open
+                # on_input_changed will fire and show contents
+                if selected.endswith("/"):
+                    pass  # don't hide — let it drill in
+                else:
+                    menu.hide()
         inp.focus()
 
-    def _apply_suggestion_from_key(self) -> bool:
-        """Apply the highlighted suggestion and return True if menu was visible."""
+    def _apply_suggestion(self) -> bool:
         menu = self.query_one("#suggestion-menu", SuggestionMenu)
-        if menu.display and menu._items:
-            val = menu.get_selected_value()
-            if val:
-                inp = self.query_one("#prompt-input", Input)
-                text = inp.value
-                if text.startswith("/"):
-                    inp.value = f"/{val}"
-                else:
-                    at_idx = text.rfind("@")
-                    if at_idx >= 0:
-                        inp.value = f"{text[:at_idx]}@{val}"
-                inp.cursor_position = len(inp.value)
+        if not (menu.display and menu._items):
+            return False
+        val = menu.get_selected_value()
+        if not val:
+            return False
+        inp = self.query_one("#prompt-input", Input)
+        text = inp.value
+        if text.startswith("/"):
+            inp.value = f"/{val}"
+            menu.hide()
+        else:
+            at_idx = text.rfind("@")
+            if at_idx >= 0:
+                inp.value = f"{text[:at_idx]}@{val}"
+            # Keep menu open for dirs so it drills in
+            if not val.endswith("/"):
                 menu.hide()
-                inp.focus()
-                return True
-        return False
+        inp.cursor_position = len(inp.value)
+        inp.focus()
+        return True
 
     async def on_key(self, event) -> None:
-        """Handle key events for menu navigation."""
         menu = self.query_one("#suggestion-menu", SuggestionMenu)
+        if not menu.display:
+            return
+        if event.key == "up":
+            event.prevent_default()
+            h = menu.highlighted
+            if h is not None and h > 0:
+                menu.highlighted = h - 1
+        elif event.key == "down":
+            event.prevent_default()
+            h = menu.highlighted
+            if h is not None and h < len(menu._items) - 1:
+                menu.highlighted = h + 1
+        elif event.key == "tab":
+            event.prevent_default()
+            self._apply_suggestion()
+        elif event.key == "escape":
+            event.prevent_default()
+            menu.hide()
+            self.query_one("#prompt-input", Input).focus()
 
-        if menu.display:
-            if event.key == "up":
-                event.prevent_default()
-                if menu.highlighted is not None and menu.highlighted > 0:
-                    menu.highlighted = menu.highlighted - 1
-                return
-            elif event.key == "down":
-                event.prevent_default()
-                if menu.highlighted is not None and menu.highlighted < len(menu._items) - 1:
-                    menu.highlighted = menu.highlighted + 1
-                return
-            elif event.key == "tab":
-                event.prevent_default()
-                self._apply_suggestion_from_key()
-                return
-            elif event.key == "escape":
-                event.prevent_default()
-                menu.hide()
-                self.query_one("#prompt-input", Input).focus()
-                return
+    # ── Input submission ──
 
-    async def on_input_submitted(self, event: Input.Submitted) -> None:
-        """Handle user input."""
-        # If menu is showing, Tab/Enter applies the selection
+    async def on_input_submitted(
+        self, event: Input.Submitted
+    ) -> None:
         menu = self.query_one("#suggestion-menu", SuggestionMenu)
         if menu.display:
-            if self._apply_suggestion_from_key():
-                # Don't submit — just applied the completion
+            if self._apply_suggestion():
                 return
             menu.hide()
 
         user_input = event.value.strip()
         if not user_input:
             return
-
         event.input.value = ""
 
         if self._is_processing:
-            self._add_info("Processing... please wait.")
+            self._add_info("Processing...")
             return
 
         cmd = user_input.lower()
@@ -561,76 +645,92 @@ class SAMApp(App):
             self._save_session()
             self.exit()
             return
-
         if cmd == "/clear":
             self.action_clear_chat()
             return
-
         if cmd == "/help":
             self._show_help()
             return
-
         if cmd == "/plan":
             if self._agent:
                 self._agent.plan_mode = not self._agent.plan_mode
-                mode = "plan mode (read-only)" if self._agent.plan_mode else "normal mode"
-                self._add_info(f"Switched to {mode}")
-                self._update_mode_label()
+                state = "on" if self._agent.plan_mode else "off"
+                self._add_info(
+                    f"Plan mode {state}"
+                )
+                self._update_status()
             return
-
         if cmd == "/reset":
             if self._sess_mgr:
-                self._session_id, conv_history = self._sess_mgr.create_session()
+                sid, conv = self._sess_mgr.create_session()
+                self._session_id = sid
                 from sam.cli import _build_agent
-                self._agent = _build_agent(self._settings, history=conv_history)
+                self._agent = _build_agent(
+                    self._settings, history=conv
+                )
                 self.action_clear_chat()
-                self._add_info(f"New session: {self._session_id[:8]}")
+                self._add_info(f"New session {sid[:8]}")
             return
-
         if cmd == "/model":
             if self._settings:
-                self._add_info(f"{self._settings.model_id} @ {self._settings.api_base}")
+                self._add_info(
+                    f"{self._settings.model_id}"
+                    f" @ {self._settings.api_base}"
+                )
             return
-
         if cmd == "/status":
             self._show_status()
             return
-
         if cmd.startswith("/"):
             from sam.skills import SkillRegistry
-            skill_name = cmd[1:]
-            skills = SkillRegistry()
-            skill = skills.get(skill_name)
+            skill = SkillRegistry().get(cmd[1:])
             if skill:
-                self._mount_msg(UserMessage(f"/{skill_name}"))
+                self._add_user_turn(f"/{skill.name}")
                 self._run_agent_turn(skill.prompt)
                 return
-            self._add_info(f"Unknown command: {cmd}")
+            self._add_info(f"Unknown: {cmd}")
             return
 
-        # Expand @file references into inline file content hints
-        processed = self._expand_at_references(user_input)
-
-        self._mount_msg(UserMessage(user_input))
+        processed = self._expand_at_refs(user_input)
+        self._add_user_turn(user_input)
         self._run_agent_turn(processed)
 
-    def _expand_at_references(self, text: str) -> str:
-        """Expand @file references to include file path hints for the agent."""
+    def _add_user_turn(self, text: str) -> None:
+        """Add a user message with separator and label."""
+        container = self.query_one(
+            "#chat-container", Vertical
+        )
+        container.mount(Separator())
+        container.mount(HumanLabel())
+        container.mount(UserMessage(text))
+        self._scroll_bottom()
+
+    def _add_assistant_turn(self, text: str) -> None:
+        """Add assistant response with label and markdown."""
+        container = self.query_one(
+            "#chat-container", Vertical
+        )
+        container.mount(AssistantLabel())
+        log = AssistantMessage(
+            markup=False, wrap=True, highlight=True
+        )
+        container.mount(log)
+        md = Markdown(text, code_theme="monokai")
+        log.write(md)
+        self._scroll_bottom()
+
+    def _expand_at_refs(self, text: str) -> str:
         if "@" not in text or not self._settings:
             return text
-
-        import re
         parts = re.findall(r"@(\S+)", text)
-        expanded = text
+        result = text
         for ref in parts:
-            full_path = self._settings.working_dir / ref
-            if full_path.exists():
-                # Replace @ref with a clear file reference the agent understands
-                expanded = expanded.replace(
-                    f"@{ref}",
-                    f"`{ref}` (file: {full_path})",
+            fp = self._settings.working_dir / ref
+            if fp.exists():
+                result = result.replace(
+                    f"@{ref}", f"`{ref}` (file: {fp})"
                 )
-        return expanded
+        return result
 
     @work(thread=False)
     async def _run_agent_turn(self, message: str) -> None:
@@ -640,16 +740,16 @@ class SAMApp(App):
 
         self._is_processing = True
         inp = self.query_one("#prompt-input", Input)
-        inp.placeholder = "..."
+        inp.placeholder = ""
 
-        container = self.query_one("#chat-container", Vertical)
-        thinking = ThinkingDots()
+        container = self.query_one(
+            "#chat-container", Vertical
+        )
+        thinking = ThinkingIndicator()
         container.mount(thinking)
         self._scroll_bottom()
 
         try:
-            from contextlib import contextmanager
-
             import sam.ui.console as con
 
             orig = {
@@ -666,41 +766,39 @@ class SAMApp(App):
 
             captured = []
 
-            def _pa(content: str):
-                if content.strip():
-                    captured.append(content)
+            def _pa(c):
+                if c.strip():
+                    captured.append(c)
 
-            def _ptc(name: str, args: dict):
-                summary = con._summarize_args(args)
-                self._mount_msg(ToolCallMessage(name, summary))
+            def _ptc(name, args):
+                s = con._summarize_args(args)
+                self._mount(ToolCallMessage(name, s))
 
-            def _ptr(text: str, is_error: bool = False):
-                show = text[:400]
-                if len(text) > 400:
-                    show += f"\n... ({len(text)} chars)"
-                self._mount_msg(ToolResultMessage(show, is_error=is_error))
+            def _ptr(t, is_error=False):
+                show = t[:400]
+                if len(t) > 400:
+                    show += f"\n... ({len(t)} chars)"
+                self._mount(
+                    ToolResultMessage(show, is_error)
+                )
 
-            def _pi(msg: str):
-                self._add_info(msg)
+            def _pi(m):
+                self._add_info(m)
 
-            def _pw(msg: str):
-                self._add_info(f"warn: {msg}")
+            def _pw(m):
+                self._add_info(f"warn: {m}")
 
-            def _pe(msg: str):
-                self._mount_msg(ToolResultMessage(msg, is_error=True))
+            def _pe(m):
+                self._mount(ToolResultMessage(m, True))
 
-            def _cp(*args, **kwargs):
-                for a in args:
-                    if isinstance(a, str) and a.strip():
-                        captured.append(a)
+            def _cp(*a, **kw):
+                for x in a:
+                    if isinstance(x, str) and x.strip():
+                        captured.append(x)
 
-            # No-op context manager to replace console.status (Rich spinner)
             @contextmanager
-            def _noop_status(*args, **kwargs):
+            def _noop(*a, **kw):
                 yield None
-
-            def _noop_log(*args, **kwargs):
-                pass
 
             con.print_assistant = _pa
             con.print_tool_call = _ptc
@@ -709,27 +807,28 @@ class SAMApp(App):
             con.print_warning = _pw
             con.print_error = _pe
             con.console.print = _cp
-            con.console.status = _noop_status
-            con.console.log = _noop_log
+            con.console.status = _noop
+            con.console.log = lambda *a, **kw: None
 
             try:
-                result = await self._agent.run_turn(message, repo_map=self._repo_map)
+                result = await self._agent.run_turn(
+                    message, repo_map=self._repo_map
+                )
             finally:
-                con.print_assistant = orig["assistant"]
-                con.print_tool_call = orig["tool_call"]
-                con.print_tool_result = orig["tool_result"]
-                con.print_info = orig["info"]
-                con.print_warning = orig["warning"]
-                con.print_error = orig["error"]
-                con.console.print = orig["console_print"]
-                con.console.status = orig["console_status"]
-                con.console.log = orig["console_log"]
+                for k, v in orig.items():
+                    if k.startswith("console_"):
+                        attr = k[len("console_"):]
+                        setattr(con.console, attr, v)
+                    else:
+                        setattr(con, k, v)
 
             if result and result.strip():
-                self._mount_msg(AssistantMessage(result))
+                self._add_assistant_turn(result)
 
         except Exception as e:
-            self._mount_msg(ToolResultMessage(f"Error: {e}", is_error=True))
+            self._mount(
+                ToolResultMessage(f"Error: {e}", True)
+            )
 
         finally:
             try:
@@ -737,40 +836,49 @@ class SAMApp(App):
             except Exception:
                 pass
             self._is_processing = False
-            inp.placeholder = "> "
+            inp.placeholder = "\u276f "
             inp.focus()
-            self._update_mode_label()
+            self._update_status()
             self._save_session()
 
-    # ── helpers ──
+    # ── Helpers ──
 
-    def _mount_msg(self, widget: Static) -> None:
-        container = self.query_one("#chat-container", Vertical)
+    def _mount(self, widget: Static) -> None:
+        container = self.query_one(
+            "#chat-container", Vertical
+        )
         container.mount(widget)
         self._scroll_bottom()
 
     def _add_info(self, text: str) -> None:
-        self._mount_msg(InfoMessage(text))
+        self._mount(InfoMessage(text))
 
     def _scroll_bottom(self) -> None:
         try:
-            self.query_one("#chat-scroll", VerticalScroll).scroll_end(animate=False)
+            self.query_one(
+                "#chat-scroll", VerticalScroll
+            ).scroll_end(animate=False)
         except Exception:
             pass
 
-    def _update_mode_label(self) -> None:
+    def _update_status(self) -> None:
         try:
-            label = self.query_one("#mode-label", Static)
+            label = self.query_one("#status-line", Static)
             parts = []
             if self._agent:
-                tokens = self._agent.history.estimate_tokens()
+                tok = self._agent.history.estimate_tokens()
                 ctx = self._settings.context_window
-                parts.append(f"~{tokens:,}/{ctx:,} tokens")
+                parts.append(f"{tok:,}/{ctx:,}")
                 if self._agent.plan_mode:
-                    parts.append("PLAN MODE")
+                    parts.append("PLAN")
             if self._settings:
                 parts.append(self._settings.model_id)
-            label.update(Text("  ".join(parts), style="dim #555555"))
+            label.update(
+                Text(
+                    "  \u2502  ".join(parts),
+                    style="#3d3d3d",
+                )
+            )
         except Exception:
             pass
 
@@ -779,62 +887,62 @@ class SAMApp(App):
 
         lines = [
             "Commands:",
-            "  /plan     toggle plan mode (read-only)",
-            "  /clear    clear chat",
-            "  /reset    new session",
-            "  /model    show model info",
-            "  /status   token usage",
-            "  /exit     quit",
+            "  /plan      toggle plan mode",
+            "  /clear     clear chat",
+            "  /reset     new session",
+            "  /model     model info",
+            "  /status    token usage",
+            "  /exit      quit",
             "",
-            "Mentions:",
-            "  @file.py  reference a file (tab to complete)",
+            "  @file.py   mention a file",
             "",
             "Skills:",
         ]
-        skills = SkillRegistry()
-        for s in skills.all_skills():
-            lines.append(f"  /{s.name:<12s} {s.description}")
-
+        for s in SkillRegistry().all_skills():
+            lines.append(f"  /{s.name:<11s} {s.description}")
         self._add_info("\n".join(lines))
 
     def _show_status(self) -> None:
         if not self._agent:
             return
         n = len(self._agent.history.messages)
-        tokens = self._agent.history.estimate_tokens()
+        tok = self._agent.history.estimate_tokens()
         ctx = self._settings.context_window
-        pct = int(tokens / ctx * 100) if ctx else 0
-        mode = "plan (read-only)" if self._agent.plan_mode else "normal"
+        pct = int(tok / ctx * 100) if ctx else 0
+        mode = "plan" if self._agent.plan_mode else "normal"
         self._add_info(
-            f"session {(self._session_id or '-')[:8]}  "
-            f"{n} msgs  ~{tokens:,}/{ctx:,} tokens ({pct}%)  {mode}"
+            f"{n} messages  {tok:,}/{ctx:,} tokens"
+            f" ({pct}%)  {mode}"
         )
 
     def _save_session(self) -> None:
         try:
-            if self._sess_mgr and self._session_id and self._agent:
-                self._sess_mgr.save(self._session_id, self._agent.history)
+            if (
+                self._sess_mgr
+                and self._session_id
+                and self._agent
+            ):
+                self._sess_mgr.save(
+                    self._session_id, self._agent.history
+                )
         except Exception:
             pass
 
     def action_clear_chat(self) -> None:
         try:
-            self.query_one("#chat-container", Vertical).remove_children()
+            self.query_one(
+                "#chat-container", Vertical
+            ).remove_children()
         except Exception:
             pass
 
-    def action_cancel(self) -> None:
-        if self._is_processing:
-            self._add_info("Cancelling...")
-
     def action_dismiss_menu(self) -> None:
         try:
-            menu = self.query_one("#suggestion-menu", SuggestionMenu)
-            if menu.display:
-                menu.hide()
-                self.query_one("#prompt-input", Input).focus()
-            else:
-                self.query_one("#prompt-input", Input).focus()
+            menu = self.query_one(
+                "#suggestion-menu", SuggestionMenu
+            )
+            menu.hide()
+            self.query_one("#prompt-input", Input).focus()
         except Exception:
             pass
 
@@ -845,5 +953,4 @@ class SAMApp(App):
 
 def run_tui(settings=None) -> None:
     """Launch the SAM TUI."""
-    app = SAMApp(settings=settings)
-    app.run()
+    SAMApp(settings=settings).run()
